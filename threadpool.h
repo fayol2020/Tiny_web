@@ -6,7 +6,7 @@
 #include<cstdio>
 #include<exception>
 #include<pthread.h>
-#include"locker.h"
+#include"locker.h" 
 
 //线程池类，把它定义为模板类是为了代码复用，模板参数T是任务类　
 //Ｔ表示的是任务，也就是http_conn对象
@@ -73,7 +73,7 @@ threadpool<T>::threadpool(int thread_number,int max_requests):
 template<typename T>
 threadpool<T> :: ~threadpool(){
     delete [] m_threads;
-    throw std:: exception();
+    m_stop=true;
 }
 
 //将任务添加到工作队列中去，操作任务队列前，无论是添加元素还是删除元素，均要先加锁－－属于共享资源
@@ -106,6 +106,7 @@ void threadpool<T>::run(){//消费者
     //该线程未终止，执行P操作，刚创建线程一定是阻塞之，使得线程睡眠在工作队列中
     while(!m_stop){
         m_queuestat.wait();//执行p操作
+        //sleep(5);
         //唤醒后，从工作队列取元素，要先加锁
         //操作等待队列(取元素，或添加元素)均一定要先加锁
         m_queuelocker.lock();//对工作队列操作钱加锁

@@ -131,7 +131,6 @@ int main(int argc,char* argv[]){
                 }
                 //初始化客户连接，user[connfd]表示当前客户连接，connfd就是已连接套接字，就直接是下标
                 users[connfd].init(connfd,client_address);  //已连接套接字、客户端IP设置端口重用，再去初始化其他一些状态
-                printf("sock_close\n");
             }
             //异常状态，或者对端关闭连接
             else if(events[i].events & (EPOLLRDHUP | EPOLLHUP |EPOLLERR)){

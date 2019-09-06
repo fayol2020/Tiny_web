@@ -414,6 +414,7 @@ bool http_conn::write(){
             }
             else{
                 modfd(m_epollfd,m_sockfd,EPOLLIN);
+                printf("%s\n",m_write_buf);
                 return false;
             }
         }
@@ -471,7 +472,7 @@ bool http_conn::add_content(const char* content){
 bool http_conn::process_write(HTTP_CODE ret){
     switch(ret){
         case INTERNAL_ERROR:{   //500内部错误，未知的其他问题
-            add_status_line(500,error_500_title);
+            add_status_line(500,error_500_title);   //如果缓冲区过小，也就是WRITE_BUFERRSIZE过小，则都不能写，都是返回false，也就是m_write_buf并没有任何数据，不向客户端写，直接在该线程中关闭连接
             add_headers(strlen(error_500_form));
             if(!add_content(error_500_form)){
                 return false;
@@ -527,12 +528,12 @@ bool http_conn::process_write(HTTP_CODE ret){
         default:{
             return false;
         }
-        //除了FILE_REQUEST外的其他几种情况，均是没有文件内容，所以，只需要将状态和首部发送即可
-        m_iv[0].iov_base = m_write_buf;
-        m_iv[0].iov_len = m_write_idx;
-        m_iv_count = 1;
-        return true;
     }
+    //除了FILE_REQUEST外的其他几种情况，均是没有文件内容，所以，只需要将状态和首部发送即可
+    m_iv[0].iov_base = m_write_buf;
+    m_iv[0].iov_len = m_write_idx;
+    m_iv_count = 1;
+    return true;
 }
 
 //有线程池中的工作线程调用，这是处理HTTP请求的入口函数
@@ -544,17 +545,21 @@ bool http_conn::process_write(HTTP_CODE ret){
 void http_conn::process(){
     //处理读事件
     HTTP_CODE read_ret = process_read();
+    //只有NO_REQUEST是继续监听读事件，读取内容，其他都要处理写事件，这也是do_request的返回结果
     if(read_ret == NO_REQUEST){    //读事件返回的是NO_REQUEST，表示还应该继续读，继续监听
         modfd(m_epollfd,m_sockfd,EPOLLIN);  //重新监听可读事件，return，还没到写的时候，这也是重置了EPOLLONESHOT
         return;
     }
     //处理写事件---我觉得这里写的有问题，待会验证一下
+    //验证完毕，就是写的数据大于当前发送缓冲区大小，就不写了，因为没必要写了
     bool write_ret = process_write(read_ret);
+
     //处理写事件就是将待写的状态行、首部行、主体行写到缓冲区，一旦缓冲区空间大小小于待写的数据字节数，那么就返回false
     //表示需要继续监听EPOLLONESHOT事件，等待缓冲区不满，触发可写(ET)，LT是缓冲区有剩余空间就会触发写事件
     if(!write_ret){     //false应该是因为写的数据大于当前发送缓冲区大小，导致没有写完
          close_conn();  //直接关闭连接，不发送数据
     }
+    //当前发送缓冲区只用来发送状态行和首部行，文件内容不通过缓冲区发送，除非缓冲区设置太小，不然不会出现这种直接关闭的情况
     modfd(m_epollfd,m_sockfd,EPOLLOUT);  //因为，process_write仅仅是将该待写数据写到了写缓冲区位置，然后监听可写事件，等待触发，由主线程完成写操作
 }
 
